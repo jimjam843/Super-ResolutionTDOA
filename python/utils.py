@@ -3,12 +3,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import toeplitz
 from scipy.stats import gmean
+from typing import Any
 
 # Types
+Any1D = np.ndarray[tuple[int], np.dtype[Any]]
 Float1D = np.ndarray[tuple[int], np.dtype[float]]
 Complex1D = np.ndarray[tuple[int], np.dtype[np.complex128]]
 Int1D = np.ndarray[tuple[int], np.dtype[int]]
 
+Any2D = np.ndarray[tuple[int,int], np.dtype[Any]]
 Complex2D = np.ndarray[tuple[int,int], np.dtype[np.complex128]]
 
 """
@@ -269,6 +272,21 @@ def tdoa_super(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int, k: int,
 """
 Model Order Estimation
 """
+
+def overlapping_windows(data: Any1D, window_size: int, overlap: int) -> Any2D:
+    """
+    Generates overlapping sliding windows from a 1D numpy array.
+
+    Args:
+        data: The input 1D array.
+        window_size: The size of the sliding window.
+        overlap: The number of elements to overlap between consecutive windows.
+
+    Returns:
+        A 2D array where each row is a window.
+    """
+    step = window_size - overlap
+    return np.lib.stride_tricks.sliding_window_view(data, window_shape=window_size)[::step]
 
 def AIC(evals: Float1D) -> int:
     """
