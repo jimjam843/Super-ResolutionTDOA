@@ -143,6 +143,27 @@ def complex_gauss_noise(power: float, num_samples: int) -> Complex1D:
     return np.sqrt(power) / np.sqrt(2) * np.random.randn(num_samples) + \
             1j * np.sqrt(power) / np.sqrt(2) * np.random.randn(num_samples)
 
+def subsample_shift(x: Complex1D, delta: float) -> Complex1D:
+    """
+    Shift vector x by fractional amount using FFT identities
+
+    Args:
+        x: the signal to be shifted
+        delta: desired sample shift (can be fractional)
+
+    Returns:
+        shifted version of signal x
+    """
+
+    N = x.shape[0]
+    fvec = np.linspace(-0.5, 0.5, N)
+    X = np.fft.fftshift(np.fft.fft(x))
+
+    H = np.exp(1j * 2 * np.pi * delta * fvec)
+    Y = X*H
+
+    return np.fft.ifft(np.fft.fftshift(Y))
+
 def sensor(signal: Complex1D, num_samps: int, toas: list[int], snr_dbs: list[float]) -> Complex1D:
     """
     Simulate receive signal at one sensor
@@ -161,7 +182,10 @@ def sensor(signal: Complex1D, num_samps: int, toas: list[int], snr_dbs: list[flo
     y0 = complex_gauss_noise(Pn, num_samps)
     for toa, snr_db in zip(toas, snr_dbs):
         Ps = Pn * 10 ** (snr_db/10)
-        y0[toa:toa+len(signal)] += np.sqrt(Ps) * signal
+
+        toa_whole = np.floor(toa).astype(int)
+        toa_frac = toa - toa_whole
+        y0[toa_whole:toa_whole+len(signal)] += np.sqrt(Ps) * subsample_shift(signal, -toa_frac)
 
     return y0
 
@@ -187,6 +211,36 @@ def tdoa_cc(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tuple[I
     lagvec = np.arange(lag_min, lag_max)
 
     return lagvec, r01
+
+def tdoa_gccphat(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tuple[Int1D, Complex1D]:
+    """
+    Estimate time-difference-of-arrival between two sensors by computing the generalized cross correlation
+    with phase transform (GCC-PHAT).
+
+    TODO: reference
+
+    Args:
+        y0: sampled signal at sensor 0
+        y1: sampled signal at sensor 1
+        lag_min: minimum lag index to compute response at
+        lag_max: maximum lag index to compute response at
+
+    Returns:
+        GCC-PHAT response and corresponding vector of computed lags
+    """
+
+    N = min(len(y0), len(y1))
+
+    r01 = np.convolve(y0, y1[::-1].conj(), 'full')
+    R01 = np.fft.fft(r01)
+    g01 = np.fft.ifft(R01/np.abs(R01))
+
+    g01 = np.abs(g01[N-1+lag_min:N-1+lag_max])
+    g01 /= np.max(g01)
+
+    lag_vec = np.arange(lag_min, lag_max)
+
+    return lag_vec, g01
 
 """
 MUSIC Paper
