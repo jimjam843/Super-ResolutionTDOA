@@ -2,6 +2,7 @@ from enum import Enum
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import toeplitz
+from scipy.signal import windows
 from scipy.stats import gmean
 from typing import Any
 
@@ -212,7 +213,7 @@ def tdoa_cc(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tuple[I
 
     return lagvec, r01
 
-def tdoa_gccphat(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tuple[Int1D, Complex1D]:
+def tdoa_gccphat(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int, D: int = 1, window: str = "boxcar") -> tuple[Float1D, Complex1D]:
     """
     Estimate time-difference-of-arrival between two sensors by computing the generalized cross correlation
     with phase transform (GCC-PHAT).
@@ -224,6 +225,8 @@ def tdoa_gccphat(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tu
         y1: sampled signal at sensor 1
         lag_min: minimum lag index to compute response at
         lag_max: maximum lag index to compute response at
+        D: oversample factor
+        window: windowing function to apply before taking IFFT (TODO: make enum)
 
     Returns:
         GCC-PHAT response and corresponding vector of computed lags
@@ -233,12 +236,27 @@ def tdoa_gccphat(y0: Complex1D, y1: Complex1D, lag_min: int, lag_max: int) -> tu
 
     r01 = np.convolve(y0, y1[::-1].conj(), 'full')
     R01 = np.fft.fft(r01)
-    g01 = np.fft.ifft(R01/np.abs(R01))
 
-    g01 = np.abs(g01[N-1+lag_min:N-1+lag_max])
+    match window:
+
+        case "boxcar":
+            W = R01 / np.abs(R01)
+        case "blackman":
+            W = R01 / np.abs(R01) * np.fft.fftshift(windows.blackman(len(R01)))
+        case "blackman-harris":
+            W = R01 / np.abs(R01) * np.fft.fftshift(windows.blackmanharris(len(R01)))
+        case "hann":
+            W = R01 / np.abs(R01) * np.fft.fftshift(windows.hann(len(R01)))
+        case "hamming":
+            W = R01 / np.abs(R01) * np.fft.fftshift(windows.hamming(len(R01)))
+        case _:
+            raise ValueError("Unsupported window {window}.")
+
+    g01 = np.fft.ifft(W, n=len(R01)*D)
+    g01 = np.abs(g01[D*(N-1+lag_min):D*(N-1+lag_max)])
     g01 /= np.max(g01)
 
-    lag_vec = np.arange(lag_min, lag_max)
+    lag_vec = np.arange(lag_min*D, lag_max*D) / D
 
     return lag_vec, g01
 
